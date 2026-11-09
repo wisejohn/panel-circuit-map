@@ -27,7 +27,6 @@ pnpm build
 | `src/lib/sample.ts` | Sample house (main floor + basement + garage subpanel). |
 | `src/lib/state.svelte.ts` | App state (Svelte 5 runes): house, hover/pin, floor, persistence. |
 | `src/lib/components/` | `PanelBoard`, `FloorPlan`, `DeviceSymbol`, and the four views. |
-| `docs/mockup.html` | The original single-file UI mockup. |
 
 ## Not built yet
 
