@@ -2,9 +2,15 @@
 	import DetailView from './lib/components/DetailView.svelte';
 	import EditorView from './lib/components/EditorView.svelte';
 	import MapView from './lib/components/MapView.svelte';
+	import PanelsView from './lib/components/PanelsView.svelte';
 	import { app, isHouse, VIEWS, type View } from './lib/state.svelte';
 
-	const TAB_NAMES: Record<View, string> = { map: 'Map', detail: 'Circuit detail', editor: 'Plan editor' };
+	const TAB_NAMES: Record<View, string> = {
+		map: 'Map',
+		detail: 'Circuit detail',
+		editor: 'Plan editor',
+		panels: 'Panels',
+	};
 
 	let fileInput = $state<HTMLInputElement>();
 	let message = $state('');
@@ -84,7 +90,9 @@
 		<MapView />
 	{:else if app.view === 'detail'}
 		<DetailView />
-	{:else}
+	{:else if app.view === 'editor'}
 		<EditorView />
+	{:else}
+		<PanelsView />
 	{/if}
 </div>

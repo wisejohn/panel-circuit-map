@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { countBy, DEVICE_TYPES, isFeeder, roomsText } from '../house';
+	import { circuitNumber, countBy, DEVICE_TYPES, isFeeder, roomsText, sortedCircuits } from '../house';
 	import { app } from '../state.svelte';
 	import type { Circuit } from '../types';
 	import DeviceIcon from './DeviceIcon.svelte';
 
 	const house = $derived(app.house);
 	const rows = $derived(
-		house.circuits.map((c) => {
+		sortedCircuits(house).map((c) => {
 			const devices = house.devices.filter((d) => d.circuitId === c.id);
 			return { c, devices, by: countBy(devices) };
 		}),
@@ -70,7 +70,7 @@
 								if (e.key === 'Enter') show(c);
 							}}
 						>
-							<td class="c">{c.slots.join('/')}</td>
+							<td class="c">{circuitNumber(house, c)}</td>
 							<td class="d">{c.label}</td>
 							<td class="c">
 								{c.amps} A{c.slots.length > 1 ? ' 2P' : ''}
