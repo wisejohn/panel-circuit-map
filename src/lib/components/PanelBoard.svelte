@@ -3,6 +3,19 @@
 	import { app } from '../state.svelte';
 	import type { Circuit, Panel } from '../types';
 
+	interface Props {
+		/** 'map' traces circuits on hover/click; 'edit' selects breakers and turns open spaces into add buttons. */
+		mode?: 'map' | 'edit';
+		selectedId?: string | null;
+		onselectcircuit?: (c: Circuit) => void;
+		onselectpanel?: (p: Panel) => void;
+		onaddcircuit?: (p: Panel, slot: number) => void;
+	}
+
+	let { mode = 'map', selectedId = null, onselectcircuit, onselectpanel, onaddcircuit }: Props = $props();
+
+	const editing = $derived(mode === 'edit');
+
 	function circuitsOf(p: Panel) {
 		return app.house.circuits.filter((c) => c.panelId === p.id);
 	}
@@ -27,13 +40,22 @@
 
 	const cell = (slot: number, span = 1) =>
 		`grid-column:${slot % 2 === 0 ? 3 : 1};grid-row:${Math.ceil(slot / 2)} / span ${span}`;
+
+	function onBreaker(c: Circuit) {
+		if (editing) onselectcircuit?.(c);
+		else app.togglePin(c.id);
+	}
 </script>
 
-<div class="panels" class:dim={!!app.active}>
+<div class="panels" class:dim={!editing && !!app.active}>
 	{#each app.house.panels as p (p.id)}
-		<section class="panel">
+		<section class="panel" class:sel={editing && selectedId === p.id}>
 			<div class="panel-head">
-				<h2>{p.name}</h2>
+				{#if editing}
+					<button type="button" class="panel-name" onclick={() => onselectpanel?.(p)}><h2>{p.name}</h2></button>
+				{:else}
+					<h2>{p.name}</h2>
+				{/if}
 				<span>{p.rating}</span>
 			</div>
 			<div class="bus">
@@ -44,15 +66,15 @@
 						type="button"
 						class="brk"
 						class:r={c.slots[0] % 2 === 0}
-						class:on={app.activeSet.has(c.id)}
+						class:on={editing ? selectedId === c.id : app.activeSet.has(c.id)}
 						style={cell(c.slots[0], c.slots.length)}
 						title="{c.label} · {c.amps} A · {deviceCount(c)} devices"
-						aria-pressed={app.pinned === c.id}
-						onmouseenter={() => app.hoverCircuit(c.id)}
-						onmouseleave={() => app.clearHover()}
-						onfocus={() => app.hoverCircuit(c.id)}
-						onblur={() => app.clearHover()}
-						onclick={() => app.togglePin(c.id)}
+						aria-pressed={editing ? selectedId === c.id : app.pinned === c.id}
+						onmouseenter={() => !editing && app.hoverCircuit(c.id)}
+						onmouseleave={() => !editing && app.clearHover()}
+						onfocus={() => !editing && app.hoverCircuit(c.id)}
+						onblur={() => !editing && app.clearHover()}
+						onclick={() => onBreaker(c)}
 					>
 						<span class="num">{c.slots.join('·')}</span>
 						<span class="lbl">{c.label}</span>
@@ -62,7 +84,17 @@
 					</button>
 				{/each}
 				{#each openSpaces(p) as s (s)}
-					<div class="space" class:r={s % 2 === 0} style={cell(s)}>{s} · space</div>
+					{#if editing}
+						<button
+							type="button"
+							class="space add"
+							class:r={s % 2 === 0}
+							style={cell(s)}
+							onclick={() => onaddcircuit?.(p, s)}>{s} · + add breaker</button
+						>
+					{:else}
+						<div class="space" class:r={s % 2 === 0} style={cell(s)}>{s} · space</div>
+					{/if}
 				{/each}
 			</div>
 			<div class="panel-foot">{p.location}</div>

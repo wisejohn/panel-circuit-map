@@ -4,8 +4,8 @@ import type { House } from './types';
 
 const STORAGE_KEY = 'panel-circuit-map:house:v1';
 
-export type View = 'map' | 'detail' | 'editor';
-export const VIEWS: View[] = ['map', 'detail', 'editor'];
+export type View = 'map' | 'detail' | 'editor' | 'panels';
+export const VIEWS: View[] = ['map', 'detail', 'editor', 'panels'];
 
 export function isHouse(value: unknown): value is House {
 	const h = value as House;
@@ -87,6 +87,23 @@ class AppState {
 			.map((f) => ({ id: f.id, n: devices.filter((d) => d.floorId === f.id).length }))
 			.sort((a, b) => b.n - a.n)[0];
 		this.floorView = best.id;
+	}
+
+	/** Remove a circuit; its devices become unassigned and any panel it fed loses its feeder. */
+	deleteCircuit(circuitId: string) {
+		const h = this.house;
+		h.circuits = h.circuits.filter((c) => c.id !== circuitId);
+		for (const d of h.devices) if (d.circuitId === circuitId) d.circuitId = null;
+		for (const p of h.panels) if (p.fedBy === circuitId) delete p.fedBy;
+		if (this.pinned === circuitId) this.pinned = null;
+		if (this.hover === circuitId) this.clearHover();
+		if (this.lastCircuit === circuitId) this.lastCircuit = null;
+	}
+
+	/** Remove an empty panel (callers make sure it has no circuits). */
+	deletePanel(panelId: string) {
+		if (this.house.circuits.some((c) => c.panelId === panelId)) return;
+		this.house.panels = this.house.panels.filter((p) => p.id !== panelId);
 	}
 
 	replaceHouse(house: House) {

@@ -9,6 +9,7 @@
 		planBounds,
 		roomName,
 		roomsText,
+		sortedCircuits,
 		TYPE_INFO,
 		type Box,
 	} from '../house';
@@ -59,7 +60,7 @@
 	const floorIsEmpty = $derived(
 		!house.rooms.some((r) => r.floorId === floorId) && !house.devices.some((d) => d.floorId === floorId),
 	);
-	const assignable = $derived(house.circuits.filter((c) => !isFeeder(house, c.id)));
+	const assignable = $derived(sortedCircuits(house).filter((c) => !isFeeder(house, c.id)));
 
 	const snap = (v: number, step: number) => Math.round(v / step) * step;
 
@@ -376,7 +377,7 @@
 				Draw rooms with the Room tool, then place devices and pick a circuit for each. Everything saves in this browser as
 				you go; use Export to keep a copy.
 			</p>
-			<p class="note">Panels and circuits can't be edited here yet. For now, change them in an exported JSON file and import it.</p>
+			<p class="note">Add or change breakers on the Panels tab.</p>
 		{/if}
 	</div>
 </div>

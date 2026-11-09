@@ -292,6 +292,95 @@ h1 {
 .space.r {
 	justify-content: flex-end;
 }
+button.space.add {
+	background: transparent;
+	cursor: pointer;
+	opacity: 0.6;
+}
+button.space.add:hover,
+button.space.add:focus-visible {
+	opacity: 1;
+	border-color: var(--accent);
+	color: var(--ink);
+}
+.panel.sel {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 1px var(--accent);
+}
+.panel-name {
+	border: 0;
+	background: transparent;
+	padding: 0;
+	cursor: pointer;
+	text-align: left;
+}
+.panel-name:hover h2 {
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.panels-edit {
+	display: grid;
+	grid-template-columns: minmax(340px, 450px) minmax(0, 420px);
+	gap: 16px;
+	align-items: start;
+}
+@media (max-width: 920px) {
+	.panels-edit {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+.panels-col {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-width: 0;
+}
+.grid2 {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+}
+.seg {
+	display: inline-flex;
+	gap: 2px;
+	background: var(--steel);
+	padding: 2px;
+	border-radius: 5px;
+	align-self: flex-start;
+}
+.seg button {
+	border: 0;
+	background: transparent;
+	font-size: 0.8rem;
+	padding: 4px 10px;
+	border-radius: 4px;
+	cursor: pointer;
+	color: var(--muted);
+}
+.seg button[aria-pressed='true'] {
+	background: var(--surface);
+	color: var(--ink);
+}
+.err {
+	font-size: 0.8rem;
+	color: var(--danger);
+	margin: 0;
+}
+.confirm {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	padding: 8px 10px;
+	border: 1px solid var(--danger);
+	border-radius: 4px;
+	font-size: 0.82rem;
+}
+.row-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
 
 .card {
 	background: var(--surface);

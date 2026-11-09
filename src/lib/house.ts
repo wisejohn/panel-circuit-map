@@ -67,6 +67,66 @@ export function isFeeder(house: House, circuitId: string): boolean {
 	return house.panels.some((p) => p.fedBy === circuitId);
 }
 
+/** Circuits ordered by panel (house order) then by first breaker slot. */
+export function sortedCircuits(house: House): Circuit[] {
+	const panelIndex = new Map(house.panels.map((p, i) => [p.id, i]));
+	return [...house.circuits].sort(
+		(a, b) => (panelIndex.get(a.panelId) ?? 0) - (panelIndex.get(b.panelId) ?? 0) || a.slots[0] - b.slots[0],
+	);
+}
+
+/** Slots taken by a breaker starting at `start`. Double-pole breakers skip a row on the same side (1 → 1, 3). */
+export const slotsFor = (start: number, poles: number) => (poles === 2 ? [start, start + 2] : [start]);
+
+export function usedSlots(house: House, panelId: string, exceptCircuitId?: string): Set<number> {
+	return new Set(
+		house.circuits.filter((c) => c.panelId === panelId && c.id !== exceptCircuitId).flatMap((c) => c.slots),
+	);
+}
+
+/** Starting slots where a breaker with this many poles fits. */
+export function validStarts(house: House, panelId: string, poles: number, exceptCircuitId?: string): number[] {
+	const panel = house.panels.find((p) => p.id === panelId);
+	if (!panel) return [];
+	const used = usedSlots(house, panelId, exceptCircuitId);
+	const out: number[] = [];
+	for (let s = 1; s <= panel.spaces; s++) {
+		const slots = slotsFor(s, poles);
+		if (slots.every((x) => x <= panel.spaces && !used.has(x))) out.push(s);
+	}
+	return out;
+}
+
+/** Highest slot in use, rounded up to an even number: the fewest spaces the panel can shrink to. */
+export function minSpaces(house: House, panelId: string): number {
+	const max = Math.max(0, ...usedSlots(house, panelId));
+	return Math.max(2, max + (max % 2));
+}
+
+/** A panel plus every panel fed from it, directly or through other subpanels. */
+export function downstreamPanels(house: House, panelId: string): Set<string> {
+	const out = new Set([panelId]);
+	let grew = true;
+	while (grew) {
+		grew = false;
+		for (const p of house.panels) {
+			if (out.has(p.id) || !p.fedBy) continue;
+			const feeder = house.circuits.find((c) => c.id === p.fedBy);
+			if (feeder && out.has(feeder.panelId)) {
+				out.add(p.id);
+				grew = true;
+			}
+		}
+	}
+	return out;
+}
+
+/** Circuits that could feed this panel without creating a loop. */
+export function feederOptions(house: House, panelId: string): Circuit[] {
+	const blocked = downstreamPanels(house, panelId);
+	return sortedCircuits(house).filter((c) => !blocked.has(c.panelId));
+}
+
 export function roomOf(house: House, d: Device): Room | undefined {
 	return house.rooms.find(
 		(r) => r.floorId === d.floorId && d.x >= r.x && d.x <= r.x + r.w && d.y >= r.y && d.y <= r.y + r.h,

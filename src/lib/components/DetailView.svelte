@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { countBy, DEVICE_TYPES, isFeeder, roomsText } from '../house';
+	import { countBy, DEVICE_TYPES, isFeeder, roomsText, sortedCircuits } from '../house';
 	import { app } from '../state.svelte';
 	import type { Circuit } from '../types';
 	import DeviceIcon from './DeviceIcon.svelte';
 
 	const house = $derived(app.house);
 	const rows = $derived(
-		house.circuits.map((c) => {
+		sortedCircuits(house).map((c) => {
 			const devices = house.devices.filter((d) => d.circuitId === c.id);
 			return { c, devices, by: countBy(devices) };
 		}),
