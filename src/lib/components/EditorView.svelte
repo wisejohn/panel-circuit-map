@@ -6,12 +6,17 @@
 		DEVICE_TYPES,
 		findCircuit,
 		isFeeder,
+		loadTraceImage,
 		newId,
 		planBounds,
+		rescaleTrace,
 		roomName,
 		roomsText,
+		rotateTrace,
 		sortedCircuits,
+		traceSize,
 		TYPE_INFO,
+		unionBox,
 		type Box,
 	} from '../house';
 	import { app } from '../state.svelte';
@@ -19,10 +24,11 @@
 	import DeviceIcon from './DeviceIcon.svelte';
 	import FloorPlan from './FloorPlan.svelte';
 
-	type Tool = 'select' | 'room' | DeviceType;
+	type Tool = 'select' | 'room' | DeviceType | 'trace-move' | 'trace-scale';
+	type Point = { x: number; y: number };
 	type Selection = { kind: 'device' | 'room'; id: string } | null;
 	type Drag = {
-		kind: 'device' | 'room';
+		kind: 'device' | 'room' | 'trace';
 		id: string;
 		dx: number;
 		dy: number;
@@ -42,6 +48,15 @@
 	let frozenBox = $state<Box | null>(null);
 	let drag: Drag | null = null;
 
+	// Trace image: setting the scale takes two clicks on the plan, then the real distance between them.
+	let calib = $state<{ a: Point; b?: Point } | null>(null);
+	let pointer = $state<Point | null>(null);
+	let calibFeet = $state<number | null>(null);
+	let calibInput = $state<HTMLInputElement>();
+	let traceFile = $state<HTMLInputElement>();
+	let traceMessage = $state('');
+	let confirmRemoveTrace = $state(false);
+
 	// Keep the floor valid after an import or a floor delete.
 	$effect(() => {
 		if (!house.floors.some((f) => f.id === floorId)) floorId = house.floors[0].id;
@@ -49,7 +64,17 @@
 
 	const floor = $derived(house.floors.find((f) => f.id === floorId) ?? house.floors[0]);
 	// The drawing area stays still while dragging, so the plan doesn't shift under the pointer.
-	const box = $derived(frozenBox ?? planBounds(house, 8));
+	const box = $derived(frozenBox ?? withTrace(planBounds(house, 8)));
+	const trace = $derived(floor.trace);
+	const calibMeasured = $derived(calib?.b ? Math.hypot(calib.b.x - calib.a.x, calib.b.y - calib.a.y) : 0);
+
+	/** Grow the drawing area to fit the trace image. */
+	function withTrace(b: Box): Box {
+		const t = floor.trace;
+		if (!t || t.hidden) return b;
+		const size = traceSize(t);
+		return unionBox(b, { x: t.x - 2, y: t.y - 2, w: size.w + 4, h: size.h + 4 });
+	}
 	const selDevice = $derived.by(() => {
 		const s = selection;
 		return s?.kind === 'device' ? house.devices.find((d) => d.id === s.id) : undefined;
@@ -80,7 +105,20 @@
 	function onDown(e: PointerEvent) {
 		if (e.button !== 0) return;
 		const p = toPlan(e);
-		if (tool === 'room') {
+		if (tool === 'trace-move') {
+			if (trace) {
+				drag = { kind: 'trace', id: floorId, dx: trace.x - p.x, dy: trace.y - p.y, carried: [] };
+				capture(e);
+			}
+		} else if (tool === 'trace-scale') {
+			if (!calib || calib.b) {
+				calib = { a: p };
+				calibFeet = null;
+			} else {
+				calib.b = p;
+				queueMicrotask(() => calibInput?.focus());
+			}
+		} else if (tool === 'room') {
 			const x = snap(p.x, 1),
 				y = snap(p.y, 1);
 			draft = { x0: x, y0: y, x1: x, y1: y };
@@ -114,9 +152,15 @@
 	}
 
 	function onMove(e: PointerEvent) {
+		if (tool === 'trace-scale') pointer = toPlan(e);
 		if (!draft && !drag) return;
 		const p = toPlan(e);
-		if (draft) {
+		if (drag?.kind === 'trace') {
+			if (trace) {
+				trace.x = Math.round((p.x + drag.dx) * 20) / 20;
+				trace.y = Math.round((p.y + drag.dy) * 20) / 20;
+			}
+		} else if (draft) {
 			draft.x1 = snap(p.x, 1);
 			draft.y1 = snap(p.y, 1);
 		} else if (drag?.kind === 'device') {
@@ -192,6 +236,53 @@
 	function switchFloor(id: string) {
 		floorId = id;
 		selection = null;
+		calib = null;
+		confirmRemoveTrace = false;
+		traceMessage = '';
+		if (tool === 'trace-move' || tool === 'trace-scale') tool = 'select';
+	}
+
+	async function addTrace(e: Event & { currentTarget: HTMLInputElement }) {
+		const file = e.currentTarget.files?.[0];
+		e.currentTarget.value = '';
+		if (!file) return;
+		try {
+			const t = await loadTraceImage(file);
+			const b = planBounds(house, 0);
+			// Start at the corner of whatever is already drawn (or the origin on an empty plan).
+			if (house.rooms.length) {
+				t.x = Math.round(b.x);
+				t.y = Math.round(b.y);
+			}
+			floor.trace = t;
+			confirmRemoveTrace = false;
+			startScale();
+		} catch {
+			traceMessage = `Couldn't read ${file.name} as an image. Try a PNG or JPEG.`;
+		}
+	}
+
+	function startScale() {
+		tool = 'trace-scale';
+		calib = null;
+		calibFeet = null;
+		traceMessage = '';
+	}
+
+	function applyScale() {
+		if (!trace || !calib?.b || !calibFeet || calibFeet <= 0 || calibMeasured <= 0) return;
+		rescaleTrace(trace, calibMeasured, calibFeet, calib.a);
+		traceMessage = `Scale set: those points are now ${calibFeet} ft apart. Drag the image to line it up with the grid.`;
+		calib = null;
+		tool = 'trace-move';
+	}
+
+	function removeTrace() {
+		delete floor.trace;
+		confirmRemoveTrace = false;
+		calib = null;
+		traceMessage = '';
+		if (tool === 'trace-move' || tool === 'trace-scale') tool = 'select';
 	}
 
 	function addFloor() {
@@ -219,6 +310,7 @@
 			tool = 'select';
 			selection = null;
 			draft = null;
+			calib = null;
 		} else if (!e.ctrlKey && !e.metaKey && !e.altKey && TOOL_KEYS[e.key.toLowerCase()]) {
 			tool = TOOL_KEYS[e.key.toLowerCase()];
 		}
@@ -272,12 +364,78 @@
 			<span class="note" style="margin-left:auto">Grid 1 ft · rooms snap to 1 ft, devices to 6 in</span>
 		</div>
 
+			<div class="trace-bar">
+				<input bind:this={traceFile} type="file" accept="image/*" hidden onchange={addTrace} />
+				{#if !trace}
+					<button type="button" class="btn" onclick={() => traceFile?.click()}>Add floor plan image…</button>
+					<span class="note">Trace over a picture of this floor: a sketch, a scan or a photo of the plans.</span>
+				{:else}
+					{@const size = traceSize(trace)}
+					<strong>Trace image</strong>
+					<span class="note">{size.w.toFixed(1)}′ × {size.h.toFixed(1)}′</span>
+					<button type="button" class="btn" aria-pressed={tool === 'trace-scale'} onclick={startScale}>Set scale</button>
+					<button
+						type="button"
+						class="btn"
+						aria-pressed={tool === 'trace-move'}
+						onclick={() => (tool = tool === 'trace-move' ? 'select' : 'trace-move')}>Move image</button
+					>
+					<button type="button" class="btn" onclick={() => rotateTrace(trace)}>Rotate 90°</button>
+					<label class="note" for="trace-opacity">Opacity</label>
+					<input
+						id="trace-opacity"
+						type="range"
+						min="0.1"
+						max="1"
+						step="0.05"
+						value={trace.opacity}
+						oninput={(e) => (trace.opacity = e.currentTarget.valueAsNumber)}
+					/>
+					<button type="button" class="btn" onclick={() => (trace.hidden = !trace.hidden)}>
+						{trace.hidden ? 'Show' : 'Hide'}
+					</button>
+					<button type="button" class="btn" onclick={() => traceFile?.click()}>Replace…</button>
+					{#if confirmRemoveTrace}
+						<span>Remove the image from this floor?</span>
+						<button type="button" class="btn danger" onclick={removeTrace}>Remove</button>
+						<button type="button" class="btn" onclick={() => (confirmRemoveTrace = false)}>Cancel</button>
+					{:else}
+						<button type="button" class="btn danger" onclick={() => (confirmRemoveTrace = true)}>Remove</button>
+					{/if}
+				{/if}
+			</div>
+			{#if tool === 'trace-scale' && calib?.b}
+				<form
+					class="trace-bar"
+					onsubmit={(e) => {
+						e.preventDefault();
+						applyScale();
+					}}
+				>
+					<label for="calib-feet">Real distance between the two points</label>
+					<input
+						id="calib-feet"
+						type="number"
+						min="0.1"
+						step="any"
+						bind:this={calibInput}
+						bind:value={calibFeet}
+					/>
+					<span>ft</span>
+					<span class="note">(currently {calibMeasured.toFixed(1)} ft)</span>
+					<button type="submit" class="btn" disabled={!calibFeet || calibFeet <= 0}>Apply</button>
+					<button type="button" class="btn" onclick={() => (calib = null)}>Start over</button>
+				</form>
+			{/if}
+			{#if traceMessage}<p class="note" role="status">{traceMessage}</p>{/if}
+
 		<div class="plan-scroll">
 			<FloorPlan
 				{house}
 				floorIds={[floorId]}
 				{box}
 				grid
+				showTrace
 				label="Editable floor plan for {floor.name}"
 				selectedId={selection?.id ?? null}
 				bind:svgEl
@@ -297,11 +455,24 @@
 						<rect class="draft" {x} {y} width={w} height={h} />
 						<text class="draft-t" x={x + w / 2} y={y + h / 2}>{w}′ × {h}′</text>
 					{/if}
+					{#if tool === 'trace-scale' && calib}
+						{@const end = calib.b ?? pointer}
+						{#if end}
+							<line class="calib-line" x1={calib.a.x} y1={calib.a.y} x2={end.x} y2={end.y} />
+						{/if}
+						<circle class="calib-dot" cx={calib.a.x} cy={calib.a.y} r=".3" />
+						{#if calib.b}<circle class="calib-dot" cx={calib.b.x} cy={calib.b.y} r=".3" />{/if}
+					{/if}
 				{/snippet}
 			</FloorPlan>
 		</div>
 		<p class="note">
-			{#if tool === 'room'}Drag on the grid to draw a room.
+			{#if tool === 'trace-scale'}
+				{#if !calib}Click one end of a wall whose length you know, such as an outside wall with a dimension on it.
+				{:else if !calib.b}Now click the other end of that wall.
+				{:else}Type the real length of that wall and press Apply.{/if}
+			{:else if tool === 'trace-move'}Drag the image to line its walls up with the grid. Press Esc when done.
+			{:else if tool === 'room'}Drag on the grid to draw a room. Draw over the walls in the image to trace it.
 			{:else if tool !== 'select'}Click to place a {TYPE_INFO[tool].name}. New devices go on the last circuit you picked.
 			{:else}Click a room or device to select it; drag to move it. Moving a room moves the devices inside it. Delete removes the selection.{/if}
 		</p>

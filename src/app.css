@@ -446,6 +446,49 @@ button.space.add:focus-visible {
 .room.on {
 	fill: var(--room-on);
 }
+.plan-svg .trace {
+	pointer-events: none;
+}
+/* Let the trace image show through while drawing over it. */
+.plan-svg.traced .room {
+	fill-opacity: 0.25;
+}
+.plan-svg.traced .dev .s {
+	fill-opacity: 0.7;
+}
+.calib-line {
+	stroke: var(--accent);
+	stroke-width: 0.12;
+	pointer-events: none;
+}
+.calib-dot {
+	fill: var(--accent);
+	pointer-events: none;
+}
+.trace-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	padding: 8px 10px;
+	border-radius: 4px;
+	background: var(--bg);
+	font-size: 0.82rem;
+}
+.trace-bar input[type='range'] {
+	width: 7em;
+}
+.trace-bar input[type='number'] {
+	width: 5.5em;
+	font-size: 0.86rem;
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	padding: 4px 6px;
+}
+.toast.err {
+	color: var(--danger);
+}
 .room.sel {
 	stroke: var(--accent);
 	stroke-width: 0.4;

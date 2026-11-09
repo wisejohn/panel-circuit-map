@@ -1,4 +1,4 @@
-import type { Circuit, Device, DeviceType, House, Room } from './types';
+import type { Circuit, Device, DeviceType, House, Room, TraceImage } from './types';
 
 export const DEVICE_TYPES: { type: DeviceType; name: string; plural: string; short: string }[] = [
 	{ type: 'rec', name: 'receptacle', plural: 'receptacles', short: 'Receptacles' },
@@ -298,4 +298,88 @@ export function planBounds(house: House, pad: number): Box {
 	}
 	if (!isFinite(x0)) return { x: -pad, y: -pad, w: 40 + 2 * pad, h: 30 + 2 * pad };
 	return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + 2 * pad, h: y1 - y0 + 2 * pad };
+}
+
+/* ---------- Trace images ---------- */
+
+/** Size on the plan, in feet, after rotation. */
+export function traceSize(t: TraceImage): { w: number; h: number } {
+	const w = t.widthPx * t.ftPerPx,
+		h = t.heightPx * t.ftPerPx;
+	return t.rotation === 90 || t.rotation === 270 ? { w: h, h: w } : { w, h };
+}
+
+/** SVG transform that draws the unrotated image (0,0)–(widthPx·ftPerPx, heightPx·ftPerPx) in its place. */
+export function traceTransform(t: TraceImage, offsetY = 0): string {
+	const { w, h } = traceSize(t);
+	const iw = t.widthPx * t.ftPerPx,
+		ih = t.heightPx * t.ftPerPx;
+	return `translate(${t.x + w / 2} ${t.y + offsetY + h / 2}) rotate(${t.rotation}) translate(${-iw / 2} ${-ih / 2})`;
+}
+
+/** Turn the image 90° clockwise about its center. */
+export function rotateTrace(t: TraceImage) {
+	const before = traceSize(t);
+	const cx = t.x + before.w / 2,
+		cy = t.y + before.h / 2;
+	t.rotation = ((t.rotation + 90) % 360) as TraceImage['rotation'];
+	const after = traceSize(t);
+	t.x = cx - after.w / 2;
+	t.y = cy - after.h / 2;
+}
+
+/** Rescale so two plan points `measured` feet apart become `actual` feet apart, keeping `anchor` fixed. */
+export function rescaleTrace(t: TraceImage, measured: number, actual: number, anchor: { x: number; y: number }) {
+	if (!(measured > 0) || !(actual > 0)) return;
+	const k = actual / measured;
+	t.ftPerPx *= k;
+	t.x = anchor.x + (t.x - anchor.x) * k;
+	t.y = anchor.y + (t.y - anchor.y) * k;
+}
+
+/** Union of two boxes. */
+export function unionBox(a: Box, b: Box): Box {
+	const x = Math.min(a.x, b.x),
+		y = Math.min(a.y, b.y);
+	return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+const MAX_TRACE_PX = 2000;
+
+/**
+ * Read an image file into a TraceImage: shrunk to at most 2000 px on its longest side so it fits in
+ * browser storage, and first shown 40 ft wide at the plan origin until the scale is set.
+ */
+export async function loadTraceImage(file: File): Promise<TraceImage> {
+	const url = URL.createObjectURL(file);
+	try {
+		const img = new Image();
+		img.src = url;
+		await img.decode();
+		const scale = Math.min(1, MAX_TRACE_PX / Math.max(img.naturalWidth, img.naturalHeight));
+		const w = Math.round(img.naturalWidth * scale),
+			h = Math.round(img.naturalHeight * scale);
+		const canvas = document.createElement('canvas');
+		canvas.width = w;
+		canvas.height = h;
+		const ctx = canvas.getContext('2d')!;
+		ctx.fillStyle = '#fff';
+		ctx.fillRect(0, 0, w, h);
+		ctx.drawImage(img, 0, 0, w, h);
+		// Line drawings compress best as PNG; photos and scans as JPEG. Keep whichever is smaller.
+		const png = canvas.toDataURL('image/png');
+		const jpeg = canvas.toDataURL('image/jpeg', 0.85);
+		return {
+			src: png.length <= jpeg.length ? png : jpeg,
+			widthPx: w,
+			heightPx: h,
+			ftPerPx: 40 / w,
+			x: 0,
+			y: 0,
+			rotation: 0,
+			opacity: 0.6,
+		};
+	} finally {
+		URL.revokeObjectURL(url);
+	}
 }

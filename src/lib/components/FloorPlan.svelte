@@ -1,6 +1,15 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { applianceCode, circuitRef, deviceName, findCircuit, planBounds, roomName, type Box } from '../house';
+	import {
+		applianceCode,
+		circuitRef,
+		deviceName,
+		findCircuit,
+		planBounds,
+		roomName,
+		traceTransform,
+		type Box,
+	} from '../house';
 	import type { Device, House, Room } from '../types';
 	import DeviceSymbol from './DeviceSymbol.svelte';
 
@@ -10,6 +19,8 @@
 		/** Fixed drawing area; defaults to the bounds of the whole house. */
 		box?: Box;
 		grid?: boolean;
+		/** Draw each floor's trace image under its rooms. */
+		showTrace?: boolean;
 		dim?: boolean;
 		litDevices?: Set<string>;
 		litRooms?: Set<string>;
@@ -34,6 +45,7 @@
 		floorIds,
 		box,
 		grid = false,
+		showTrace = false,
 		dim = false,
 		litDevices,
 		litRooms,
@@ -63,6 +75,10 @@
 			: `${b.x} ${b.y} ${b.w} ${b.h}`,
 	);
 	const floorName = (id: string) => house.floors.find((f) => f.id === id)?.name ?? '';
+	const traceOf = (id: string) => {
+		const t = house.floors.find((f) => f.id === id)?.trace;
+		return t && !t.hidden ? t : undefined;
+	};
 
 	function selRing(d: Device) {
 		if (d.type !== 'appl') return null;
@@ -84,6 +100,7 @@
 	bind:this={svgEl}
 	class="plan-svg plan"
 	class:dim
+	class:traced={showTrace && floorIds.some((id) => traceOf(id))}
 	{viewBox}
 	role="img"
 	aria-label={label}
@@ -111,6 +128,20 @@
 		{@const off = fi * (b.h + GAP)}
 		{#if multi}
 			<text class="ftitle" x={b.x + 0.3} y={b.y + off - 1}>{floorName(fid)}</text>
+		{/if}
+		{#if showTrace}
+			{@const t = traceOf(fid)}
+			{#if t}
+				<image
+					class="trace"
+					href={t.src}
+					width={t.widthPx * t.ftPerPx}
+					height={t.heightPx * t.ftPerPx}
+					opacity={t.opacity}
+					preserveAspectRatio="none"
+					transform={traceTransform(t, off)}
+				/>
+			{/if}
 		{/if}
 
 		{#each house.rooms.filter((r) => r.floorId === fid) as r (r.id)}

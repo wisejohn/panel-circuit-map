@@ -73,7 +73,8 @@
 			</p>
 		</div>
 		<div class="top-right">
-			{#if message}<span class="toast" role="status">{message}</span>{/if}
+			{#if app.saveError}<span class="toast err" role="alert">{app.saveError}</span>
+			{:else if message}<span class="toast" role="status">{message}</span>{/if}
 			<button type="button" class="btn" onclick={exportJson}>Export</button>
 			<button type="button" class="btn" onclick={() => fileInput?.click()}>Import</button>
 			<button type="button" class="btn" onclick={reset}>Load sample</button>

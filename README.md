@@ -4,7 +4,7 @@ Map every breaker in your electrical panel(s) to the receptacles, lights, fans, 
 
 - **Map**: panels on the left, floor plan on the right. Hover or click a breaker to light up everything on it; hover a device to find its breaker. Floor tabs show how many devices on the active circuit are on each floor.
 - **Circuit detail**: one row per circuit with counts of each device type and the rooms it reaches.
-- **Plan editor**: draw rooms on a 1 ft grid, place and move devices, assign circuits, add and rename floors.
+- **Plan editor**: draw rooms on a 1 ft grid, place and move devices, assign circuits, add and rename floors. Add a picture of each floor's real plan, set its scale from one known wall, and trace over it.
 - **Panels**: add panels and breakers, set amps, poles (120/240 V), position, protection, and which breaker feeds a subpanel.
 
 Data saves in the browser (localStorage). Use **Export** / **Import** to keep or move a copy as JSON.
@@ -32,4 +32,3 @@ pnpm build
 ## Not built yet
 
 - Undo
-- Tracing over an uploaded floor plan image

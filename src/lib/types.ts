@@ -51,6 +51,25 @@ export interface Floor {
 	id: string;
 	name: string;
 	short: string;
+	/** Picture of the real floor plan, drawn under the rooms in the plan editor so they can be traced. */
+	trace?: TraceImage;
+}
+
+export interface TraceImage {
+	/** The image as a data: URL, so it saves and exports with the house. */
+	src: string;
+	/** Natural size of the stored image, in pixels. */
+	widthPx: number;
+	heightPx: number;
+	/** Feet per image pixel. */
+	ftPerPx: number;
+	/** Top-left corner of the (rotated) image on the plan, in feet. */
+	x: number;
+	y: number;
+	/** Clockwise quarter turns. */
+	rotation: 0 | 90 | 180 | 270;
+	opacity: number;
+	hidden?: boolean;
 }
 
 export interface Room {

@@ -49,6 +49,8 @@ class AppState {
 	floorView = $state<string>(this.house.floors[0]?.id ?? 'all');
 	/** Circuit given to newly placed devices. */
 	lastCircuit = $state<string | null>(null);
+	/** Set when the last save to browser storage failed (usually because it is full). */
+	saveError = $state('');
 
 	active = $derived(this.hover ?? this.pinned);
 	activeSet = $derived(this.active ? expandCircuit(this.house, this.active) : new Set<string>());
@@ -127,8 +129,9 @@ $effect.root(() => {
 		const json = JSON.stringify(app.house);
 		try {
 			localStorage.setItem(STORAGE_KEY, json);
+			if (app.saveError) app.saveError = '';
 		} catch {
-			// Storage full or blocked; the app still works for this visit.
+			app.saveError = `Couldn't save in this browser: storage is full (${Math.round(json.length / 1024)} KB). Export to keep a copy, or remove a trace image.`;
 		}
 	});
 });
