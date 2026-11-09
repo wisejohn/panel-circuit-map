@@ -1,5 +1,8 @@
 <script lang="ts">
 	import {
+		BREAKER_KINDS,
+		breakerKind,
+		circuitNumber,
 		circuitRef,
 		countsText,
 		expandCircuit,
@@ -7,9 +10,12 @@
 		isFeeder,
 		minSpaces,
 		newId,
+		placementKey,
+		placementLabel,
 		roomsText,
-		slotsFor,
-		validStarts,
+		validPlacements,
+		type BreakerKind,
+		type Placement,
 	} from '../house';
 	import { app } from '../state.svelte';
 	import type { Circuit, Panel, Protection } from '../types';
@@ -57,8 +63,9 @@
 		error = '';
 	}
 
-	function addCircuit(p: Panel, slot: number) {
-		const c: Circuit = { id: newId('c'), panelId: p.id, slots: [slot], amps: 15, label: 'New circuit', protection: '' };
+	function addCircuit(p: Panel, at: Placement) {
+		const c: Circuit = { id: newId('c'), panelId: p.id, slots: at.slots, amps: 15, label: 'New circuit', protection: '' };
+		if (at.half) c.half = at.half;
 		house.circuits.push(c);
 		select({ kind: 'circuit', id: c.id });
 		focusLabel = true;
@@ -71,26 +78,44 @@
 		select({ kind: 'panel', id: p.id });
 	}
 
-	function setPoles(c: Circuit, poles: number) {
-		if (poles === c.slots.length) return;
-		if (validStarts(house, c.panelId, poles, c.id).includes(c.slots[0])) {
-			c.slots = slotsFor(c.slots[0], poles);
+	function place(c: Circuit, at: Placement) {
+		c.slots = at.slots;
+		if (at.half) c.half = at.half;
+		else delete c.half;
+	}
+
+	const KIND_NEEDS: Partial<Record<BreakerKind, string>> = {
+		stacked: 'the space below it on the same side to be free',
+		across: 'the space beside it in the same row to be free, starting from the left side',
+	};
+
+	/** Change breaker type, keeping it where it is when the new shape fits there. */
+	function setKind(c: Circuit, kind: BreakerKind) {
+		if (kind === breakerKind(c)) return;
+		const fits = validPlacements(house, c.panelId, kind, c.id).filter((p) => p.slots[0] === c.slots[0]);
+		if (fits.length) {
+			place(c, fits.find((p) => p.half === (c.half ?? 'a')) ?? fits[0]);
 			error = '';
 		} else {
-			const need = slotsFor(c.slots[0], poles).filter((s) => s !== c.slots[0]);
-			error = `Space ${need.join(', ')} is taken or past the end of the panel. Move this breaker to a spot with a free space below it first.`;
+			const need = KIND_NEEDS[kind];
+			error = need ? `That needs ${need}. Move this breaker first.` : "That doesn't fit here. Move this breaker first.";
 		}
 	}
 
 	function setPanel(c: Circuit, panelId: string) {
-		const starts = validStarts(house, panelId, c.slots.length);
-		if (!starts.length) {
+		const spots = validPlacements(house, panelId, breakerKind(c));
+		if (!spots.length) {
 			error = 'That panel has no open space for this breaker.';
 			return;
 		}
 		c.panelId = panelId;
-		c.slots = slotsFor(starts[0], c.slots.length);
+		place(c, spots[0]);
 		error = '';
+	}
+
+	function setPosition(c: Circuit, key: string) {
+		const at = validPlacements(house, c.panelId, breakerKind(c), c.id).find((p) => placementKey(p) === key);
+		if (at) place(c, at);
 	}
 
 	function setSpaces(p: Panel, input: HTMLInputElement) {
@@ -191,11 +216,16 @@
 					</datalist>
 				</div>
 				<div class="field">
-					<span class="k">Poles</span>
-					<div class="seg" role="group" aria-label="Poles">
-						<button type="button" aria-pressed={c.slots.length === 1} onclick={() => setPoles(c, 1)}>1 · 120 V</button>
-						<button type="button" aria-pressed={c.slots.length === 2} onclick={() => setPoles(c, 2)}>2 · 240 V</button>
-					</div>
+					<span class="k">Voltage</span>
+					<output>{c.slots.length > 1 ? '240 V, double-pole' : '120 V'}</output>
+				</div>
+			</div>
+			<div class="field">
+				<span class="k">Breaker type</span>
+				<div class="seg wrap" role="group" aria-label="Breaker type">
+					{#each BREAKER_KINDS as k (k.kind)}
+						<button type="button" aria-pressed={breakerKind(c) === k.kind} onclick={() => setKind(c, k.kind)}>{k.name}</button>
+					{/each}
 				</div>
 			</div>
 			<div class="grid2">
@@ -207,13 +237,9 @@
 				</div>
 				<div class="field">
 					<label for="c-slot">Position</label>
-					<select
-						id="c-slot"
-						value={c.slots[0]}
-						onchange={(e) => (c.slots = slotsFor(Number(e.currentTarget.value), c.slots.length))}
-					>
-						{#each validStarts(house, c.panelId, c.slots.length, c.id) as s (s)}
-							<option value={s}>Space {slotsFor(s, c.slots.length).join(' + ')} ({s % 2 ? 'left' : 'right'})</option>
+					<select id="c-slot" value={placementKey(c)} onchange={(e) => setPosition(c, e.currentTarget.value)}>
+						{#each validPlacements(house, c.panelId, breakerKind(c), c.id) as at (placementKey(at))}
+							<option value={placementKey(at)}>{placementLabel(at)}</option>
 						{/each}
 					</select>
 				</div>
@@ -287,6 +313,29 @@
 					/>
 				</div>
 			</div>
+			<div class="grid2">
+				<div class="field">
+					<label for="p-numbering">Numbering</label>
+					<select
+						id="p-numbering"
+						value={p.numbering ?? 'odd-even'}
+						onchange={(e) => (p.numbering = e.currentTarget.value as 'odd-even' | 'sequential')}
+					>
+						<option value="odd-even">Odd left, even right</option>
+						<option value="sequential">Down the left, then the right</option>
+					</select>
+				</div>
+				<div class="field">
+					<label for="p-prefix">Number prefix</label>
+					<input
+						id="p-prefix"
+						type="text"
+						placeholder="e.g. S"
+						value={p.prefix ?? ''}
+						oninput={(e) => (p.prefix = e.currentTarget.value)}
+					/>
+				</div>
+			</div>
 			<div class="field">
 				<label for="p-loc">Location</label>
 				<input
@@ -304,7 +353,7 @@
 					{#each house.panels.filter((x) => x.id !== p.id) as other (other.id)}
 						<optgroup label={other.name}>
 							{#each feederOptions(house, p.id).filter((c) => c.panelId === other.id) as c (c.id)}
-								<option value={c.id}>{c.slots.join('/')} · {c.label} ({c.amps} A)</option>
+								<option value={c.id}>{circuitNumber(house, c)} · {c.label} ({c.amps} A)</option>
 							{/each}
 						</optgroup>
 					{/each}
@@ -347,8 +396,9 @@
 			<h3>Panels and breakers</h3>
 			<p class="note">Click a breaker to edit it, an open space to add a breaker there, or a panel's name to edit the panel.</p>
 			<p class="note">
-				A double-pole (240 V) breaker takes two spaces on the same side, like 1 and 3. Subpanels are linked to the
-				breaker that feeds them, so tracing that breaker on the map lights up everything in the subpanel.
+				A 240 V breaker takes two spaces: stacked on one side, or across both sides of one row, depending on the
+				panel. Tandem breakers fit two circuits in one space. Subpanels are linked to the breaker that feeds them,
+				so tracing that breaker on the map lights up everything in the subpanel.
 			</p>
 			{#if house.circuits.some((c) => isFeeder(house, c.id))}
 				<p class="note">

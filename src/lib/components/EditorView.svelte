@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		cap,
+		circuitNumber,
 		countsText,
 		DEVICE_TYPES,
 		findCircuit,
@@ -323,7 +324,7 @@
 					{#each house.panels as p (p.id)}
 						<optgroup label={p.name}>
 							{#each assignable.filter((c) => c.panelId === p.id) as c (c.id)}
-								<option value={c.id}>{c.slots.join('/')} · {c.label} ({c.amps} A)</option>
+								<option value={c.id}>{circuitNumber(house, c)} · {c.label} ({c.amps} A)</option>
 							{/each}
 						</optgroup>
 					{/each}

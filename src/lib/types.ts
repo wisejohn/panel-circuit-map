@@ -19,6 +19,14 @@ export interface Panel {
 	location: string;
 	/** Circuit id of the breaker that feeds this panel, for subpanels. */
 	fedBy?: string;
+	/**
+	 * How breakers are numbered on the panel's directory.
+	 * - 'odd-even' (default): odd spaces down the left, even down the right; tandem halves are 9A / 9B.
+	 * - 'sequential': count breakers down the left column, then down the right.
+	 */
+	numbering?: 'odd-even' | 'sequential';
+	/** Text put before every breaker number, e.g. "S" → S1, S2. */
+	prefix?: string;
 	/** Where the panel is drawn on the floor plan. */
 	marker?: { floorId: string; x: number; y: number };
 }
@@ -26,8 +34,14 @@ export interface Panel {
 export interface Circuit {
 	id: string;
 	panelId: string;
-	/** Breaker spaces used: one for 120 V, two for a double-pole 240 V breaker (e.g. [1, 3]). */
+	/**
+	 * Breaker spaces used, numbered odd down the left and even down the right (the panel's geometry,
+	 * whatever its printed numbering). One space for 120 V; two for a 240 V double-pole breaker:
+	 * stacked on one side ([1, 3]) or side by side across one row ([1, 2]).
+	 */
 	slots: number[];
+	/** For tandem (twin) breakers: which half of the space this circuit uses, upper 'a' or lower 'b'. */
+	half?: 'a' | 'b';
 	amps: number;
 	label: string;
 	protection: Protection;

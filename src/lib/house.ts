@@ -71,36 +71,136 @@ export function isFeeder(house: House, circuitId: string): boolean {
 export function sortedCircuits(house: House): Circuit[] {
 	const panelIndex = new Map(house.panels.map((p, i) => [p.id, i]));
 	return [...house.circuits].sort(
-		(a, b) => (panelIndex.get(a.panelId) ?? 0) - (panelIndex.get(b.panelId) ?? 0) || a.slots[0] - b.slots[0],
+		(a, b) =>
+			(panelIndex.get(a.panelId) ?? 0) - (panelIndex.get(b.panelId) ?? 0) ||
+			a.slots[0] - b.slots[0] ||
+			(a.half === 'b' ? 1 : 0) - (b.half === 'b' ? 1 : 0),
 	);
 }
 
-/** Slots taken by a breaker starting at `start`. Double-pole breakers skip a row on the same side (1 → 1, 3). */
-export const slotsFor = (start: number, poles: number) => (poles === 2 ? [start, start + 2] : [start]);
+/* ---------- Breaker geometry ----------
+ * Spaces are numbered odd down the left column and even down the right, so space s is in
+ * row ceil(s / 2). A breaker is one of:
+ *   single  – one space
+ *   half    – one half of a tandem (twin) breaker; two halves share a space
+ *   stacked – 240 V double-pole on one side, two rows tall (1 + 3)
+ *   across  – 240 V double-pole spanning both columns in one row (1 + 2)
+ */
+export type BreakerKind = 'single' | 'half' | 'stacked' | 'across';
 
-export function usedSlots(house: House, panelId: string, exceptCircuitId?: string): Set<number> {
-	return new Set(
-		house.circuits.filter((c) => c.panelId === panelId && c.id !== exceptCircuitId).flatMap((c) => c.slots),
-	);
+export const BREAKER_KINDS: { kind: BreakerKind; name: string }[] = [
+	{ kind: 'single', name: 'Single' },
+	{ kind: 'half', name: 'Tandem half' },
+	{ kind: 'stacked', name: '240 V stacked' },
+	{ kind: 'across', name: '240 V across' },
+];
+
+export function breakerKind(c: Pick<Circuit, 'slots' | 'half'>): BreakerKind {
+	if (c.half) return 'half';
+	if (c.slots.length === 1) return 'single';
+	return c.slots[1] === c.slots[0] + 1 ? 'across' : 'stacked';
 }
 
-/** Starting slots where a breaker with this many poles fits. */
-export function validStarts(house: House, panelId: string, poles: number, exceptCircuitId?: string): number[] {
+export const rowOf = (slot: number) => Math.ceil(slot / 2);
+export const isRight = (slot: number) => slot % 2 === 0;
+
+export interface Placement {
+	slots: number[];
+	half?: 'a' | 'b';
+}
+
+export const placementKey = (p: Placement) => p.slots.join('-') + (p.half ?? '');
+
+export function placementLabel(p: Placement): string {
+	const row = rowOf(p.slots[0]);
+	const side = isRight(p.slots[0]) ? 'right' : 'left';
+	if (p.half) return `Row ${row} ${side}, ${p.half === 'a' ? 'upper' : 'lower'} half`;
+	if (p.slots.length === 1) return `Row ${row} ${side}`;
+	if (p.slots[1] === p.slots[0] + 1) return `Row ${row}, both sides`;
+	return `Rows ${row}–${row + 1} ${side}`;
+}
+
+interface Occupied {
+	full: boolean;
+	a: boolean;
+	b: boolean;
+}
+
+function occupancy(house: House, panelId: string, exceptCircuitId?: string): Map<number, Occupied> {
+	const map = new Map<number, Occupied>();
+	for (const c of house.circuits) {
+		if (c.panelId !== panelId || c.id === exceptCircuitId) continue;
+		for (const s of c.slots) {
+			const o = map.get(s) ?? { full: false, a: false, b: false };
+			if (c.half) o[c.half] = true;
+			else o.full = true;
+			map.set(s, o);
+		}
+	}
+	return map;
+}
+
+/** Every place a breaker of this kind could go. */
+export function validPlacements(
+	house: House,
+	panelId: string,
+	kind: BreakerKind,
+	exceptCircuitId?: string,
+): Placement[] {
 	const panel = house.panels.find((p) => p.id === panelId);
 	if (!panel) return [];
-	const used = usedSlots(house, panelId, exceptCircuitId);
-	const out: number[] = [];
+	const occ = occupancy(house, panelId, exceptCircuitId);
+	const empty = (s: number) => s <= panel.spaces && !occ.get(s);
+	const out: Placement[] = [];
 	for (let s = 1; s <= panel.spaces; s++) {
-		const slots = slotsFor(s, poles);
-		if (slots.every((x) => x <= panel.spaces && !used.has(x))) out.push(s);
+		if (kind === 'single' && empty(s)) out.push({ slots: [s] });
+		if (kind === 'half') {
+			const o = occ.get(s);
+			for (const half of ['a', 'b'] as const) if (!o?.full && !o?.[half]) out.push({ slots: [s], half });
+		}
+		if (kind === 'stacked' && empty(s) && empty(s + 2)) out.push({ slots: [s, s + 2] });
+		if (kind === 'across' && !isRight(s) && empty(s) && empty(s + 1)) out.push({ slots: [s, s + 1] });
+	}
+	return out;
+}
+
+/** Spaces (or halves of a tandem space) with nothing in them, for drawing and for "add breaker". */
+export function openCells(house: House, panelId: string): Placement[] {
+	const panel = house.panels.find((p) => p.id === panelId);
+	if (!panel) return [];
+	const occ = occupancy(house, panelId);
+	const out: Placement[] = [];
+	for (let s = 1; s <= panel.spaces; s++) {
+		const o = occ.get(s);
+		if (!o) out.push({ slots: [s] });
+		else if (!o.full && !(o.a && o.b)) out.push({ slots: [s], half: o.a ? 'b' : 'a' });
 	}
 	return out;
 }
 
 /** Highest slot in use, rounded up to an even number: the fewest spaces the panel can shrink to. */
 export function minSpaces(house: House, panelId: string): number {
-	const max = Math.max(0, ...usedSlots(house, panelId));
+	const max = Math.max(0, ...house.circuits.filter((c) => c.panelId === panelId).flatMap((c) => c.slots));
 	return Math.max(2, max + (max % 2));
+}
+
+/** Order for 'sequential' numbering: left column top to bottom (240 V across counts here), then right. */
+function sequentialKey(c: Circuit): number {
+	const col = breakerKind(c) === 'across' || !isRight(c.slots[0]) ? 0 : 1;
+	return col * 100000 + rowOf(c.slots[0]) * 10 + (c.half === 'b' ? 1 : 0);
+}
+
+/** The number printed on the panel directory for this breaker, e.g. "9", "1/3", "9A" or "S4". */
+export function circuitNumber(house: House, c: Circuit): string {
+	const p = house.panels.find((x) => x.id === c.panelId);
+	const prefix = p?.prefix ?? '';
+	if (p?.numbering === 'sequential') {
+		const order = house.circuits
+			.filter((x) => x.panelId === c.panelId)
+			.sort((a, b) => sequentialKey(a) - sequentialKey(b));
+		return prefix + (order.findIndex((x) => x.id === c.id) + 1);
+	}
+	return prefix + (c.half ? `${c.slots[0]}${c.half.toUpperCase()}` : c.slots.join('/'));
 }
 
 /** A panel plus every panel fed from it, directly or through other subpanels. */
@@ -142,7 +242,7 @@ export function deviceName(d: Device): string {
 
 export function circuitRef(house: House, c: Circuit): string {
 	const p = house.panels.find((p) => p.id === c.panelId);
-	return `${p?.short ?? '?'} ${c.slots.join('/')}`;
+	return `${p?.short ?? '?'} ${circuitNumber(house, c)}`;
 }
 
 export function countBy(devices: Device[]): Partial<Record<DeviceType, number>> {
